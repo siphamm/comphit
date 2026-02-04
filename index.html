@@ -172,6 +172,24 @@
       background: #e8f4e8 !important;
     }
 
+    .toggle-row {
+      margin-bottom: 16px;
+    }
+
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .toggle-label input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
     .money {
       font-family: 'SF Mono', Monaco, monospace;
     }
@@ -262,11 +280,21 @@
     <div class="stock-price-note">
       Note: RSU values are calculated using the stock price you provided. Actual value will vary based on stock price at vest date.
     </div>
+    <div class="toggle-row">
+      <label class="toggle-label">
+        <input type="checkbox" id="showJpy" onchange="toggleRsuDisplay()">
+        <span>Show RSU values in JPY instead of shares</span>
+      </label>
+    </div>
     <div id="resultsContent"></div>
   </div>
 
   <script>
     const VEST_MONTHS = [1, 4, 7, 10]; // Feb=1, May=4, Aug=7, Nov=10 (0-indexed)
+
+    // Global state for toggling display
+    let calculatedData = null;
+    let currentStockPrice = 0;
 
     // Generate refresher inputs on page load
     document.addEventListener('DOMContentLoaded', function() {
@@ -287,28 +315,34 @@
       const joinDate = new Date(joinDateStr);
       const today = new Date();
       const currentYear = today.getFullYear();
-      const joinYear = joinDate.getFullYear();
+
+      // Calculate cliff date (first vest of initial grant)
+      // Refreshers are granted on cliff date anniversary, not join date anniversary
+      const firstAnniversary = new Date(joinDate);
+      firstAnniversary.setFullYear(firstAnniversary.getFullYear() + 1);
+      const cliffDate = getFirstVestDateOnOrAfter(firstAnniversary);
+      const cliffYear = cliffDate.getFullYear();
 
       let html = '';
-      // Year 2 = second calendar year at company = first anniversary
-      // e.g., join 2023 -> Year 2 is 2024 (first anniversary)
+      // Year 2 = first refresher, granted on cliff date
+      // Year 3 = second refresher, granted on cliff date + 1 year, etc.
       let year = 2;
-      let anniversaryYear = joinYear + 1; // First anniversary year
+      let grantYear = cliffYear; // First refresher granted in cliff year
 
       // Only show inputs for past years (before current year)
-      while (anniversaryYear < currentYear) {
+      while (grantYear < currentYear) {
         html += `
           <div class="refresher-input">
-            <label for="refresher${year}">Year ${year} (${anniversaryYear})</label>
+            <label for="refresher${year}">Year ${year} (${grantYear})</label>
             <input type="number" id="refresher${year}" data-year="${year}"
-                   data-anniversary-year="${anniversaryYear}" placeholder="0" onchange="updateFuturePreview()">
+                   data-grant-year="${grantYear}" placeholder="0" onchange="updateFuturePreview()">
           </div>
         `;
         year++;
-        anniversaryYear++;
+        grantYear++;
       }
 
-      grid.innerHTML = html || '<p class="hint" style="grid-column: 1 / -1;">No past refreshers yet (refreshers start from Year 2).</p>';
+      grid.innerHTML = html || '<p class="hint" style="grid-column: 1 / -1;">No past refreshers yet (refreshers start from Year 2 on your first vest date).</p>';
       updateFuturePreview();
     }
 
@@ -336,12 +370,24 @@
       }
     }
 
-    function getFirstVestDate(joinDate) {
-      // Find the first vest date (Feb 1, May 1, Aug 1, Nov 1) STRICTLY AFTER join date
-      // If you start on a vest day, your vesting schedule starts from the NEXT vest day
+    function getFirstVestDateOnOrAfter(date) {
+      // Find the first vest date (Feb 1, May 1, Aug 1, Nov 1) ON OR AFTER the given date
       const vestDates = VEST_MONTHS.map(month => {
-        const d = new Date(joinDate.getFullYear(), month, 1);
-        if (d <= joinDate) {  // Changed from < to <= (strictly after)
+        const d = new Date(date.getFullYear(), month, 1);
+        if (d < date) {
+          d.setFullYear(d.getFullYear() + 1);
+        }
+        return d;
+      });
+      vestDates.sort((a, b) => a - b);
+      return vestDates[0];
+    }
+
+    function getFirstVestDateStrictlyAfter(date) {
+      // Find the first vest date (Feb 1, May 1, Aug 1, Nov 1) STRICTLY AFTER the given date
+      const vestDates = VEST_MONTHS.map(month => {
+        const d = new Date(date.getFullYear(), month, 1);
+        if (d <= date) {
           d.setFullYear(d.getFullYear() + 1);
         }
         return d;
@@ -370,31 +416,38 @@
 
     function calculateInitialGrantVesting(joinDate, totalShares, startDate, endDate) {
       const vesting = [];
-      const firstVestScheduleDate = getFirstVestDate(joinDate);
-      const cliffDate = new Date(firstVestScheduleDate);
-      cliffDate.setFullYear(cliffDate.getFullYear() + 1);
 
-      // Calculate vesting end date (4 years from first vest schedule)
-      const vestingEndDate = new Date(firstVestScheduleDate);
-      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 4);
+      // 1st anniversary = join date + 1 year
+      const firstAnniversary = new Date(joinDate);
+      firstAnniversary.setFullYear(firstAnniversary.getFullYear() + 1);
+
+      // Cliff vest = first vest date on or after 1st anniversary
+      const cliffDate = getFirstVestDateOnOrAfter(firstAnniversary);
+
+      // Vesting ends 4 years after join (16 quarters total)
+      const vestingEndDate = new Date(joinDate);
+      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 5); // 4 years of vesting after cliff
 
       // Get all vest dates from cliff to end
       const vestDates = getVestDatesInRange(cliffDate, vestingEndDate);
 
-      // At cliff: 25% vests (4 quarters worth)
-      // Remaining 75% vests over next 12 quarters
+      // At cliff: 25% vests
+      // Remaining 75% vests over next 12 quarters (6.25% each)
       const cliffShares = totalShares * 0.25;
       const quarterlyShares = (totalShares * 0.75) / 12;
 
       vestDates.forEach((vestDate, index) => {
         if (vestDate >= startDate && vestDate <= endDate) {
-          const shares = index === 0 ? cliffShares : quarterlyShares;
-          vesting.push({
-            date: vestDate,
-            shares: shares,
-            type: 'initial',
-            note: index === 0 ? 'Cliff vest' : 'Quarterly vest'
-          });
+          // Only count up to 13 vests (1 cliff + 12 quarterly)
+          if (index < 13) {
+            const shares = index === 0 ? cliffShares : quarterlyShares;
+            vesting.push({
+              date: vestDate,
+              shares: shares,
+              type: 'initial',
+              note: index === 0 ? 'Cliff vest' : 'Quarterly vest'
+            });
+          }
         }
       });
 
@@ -404,23 +457,25 @@
     function calculateRefresherVesting(grantDate, totalShares, startDate, endDate) {
       const vesting = [];
 
-      // Refreshers vest quarterly over 4 years from grant date
-      // First vest is on the next vest date after grant
-      const firstVestDate = getFirstVestDate(grantDate);
+      // Refreshers vest quarterly over 4 years
+      // First vest is on the quarter AFTER the grant (strictly after grant date)
+      const firstVestDate = getFirstVestDateStrictlyAfter(grantDate);
       const vestingEndDate = new Date(grantDate);
-      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 4);
+      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 5); // Give buffer for 16 quarters
 
       const vestDates = getVestDatesInRange(firstVestDate, vestingEndDate);
-      const sharesPerQuarter = totalShares / 16; // 4 years * 4 quarters
+      const sharesPerQuarter = totalShares / 16; // 4 years * 4 quarters = 6.25% each
 
+      let vestCount = 0;
       vestDates.forEach(vestDate => {
-        if (vestDate >= startDate && vestDate <= endDate) {
+        if (vestDate >= startDate && vestDate <= endDate && vestCount < 16) {
           vesting.push({
             date: vestDate,
             shares: sharesPerQuarter,
             type: 'refresher',
             grantYear: grantDate.getFullYear()
           });
+          vestCount++;
         }
       });
 
@@ -447,6 +502,12 @@
       endDate.setFullYear(endDate.getFullYear() + 4);
       const endYear = endDate.getFullYear();
 
+      // Calculate the cliff date (first vest of initial grant)
+      // This is when the first refresher is granted
+      const firstAnniversary = new Date(joinDate);
+      firstAnniversary.setFullYear(firstAnniversary.getFullYear() + 1);
+      const cliffDate = getFirstVestDateOnOrAfter(firstAnniversary);
+
       // Collect past refresher grants
       const refresherInputs = document.querySelectorAll('#refreshersGrid input');
       const refreshers = [];
@@ -460,9 +521,10 @@
         if (shares > 0) {
           pastTotal += shares;
           pastCount++;
-          // Year N means (N-1) years after join date (Year 2 = 1st anniversary)
-          const grantDate = new Date(joinDate);
-          grantDate.setFullYear(grantDate.getFullYear() + (year - 1));
+          // Refreshers are granted on the cliff date anniversary
+          // Year 2 = cliff date, Year 3 = cliff date + 1 year, etc.
+          const grantDate = new Date(cliffDate);
+          grantDate.setFullYear(cliffDate.getFullYear() + (year - 2));
           refreshers.push({ grantDate, shares, year, isFuture: false });
         }
       });
@@ -472,26 +534,26 @@
       const futureRefresherShares = Math.round(avgPastRefresher * reductionPercent / 100);
 
       // Determine the first future refresher year (current year or later)
-      // Year 2 = joinYear + 1, Year N = joinYear + (N-1)
       const currentYear = today.getFullYear();
-      const joinYear = joinDate.getFullYear();
-      let firstFutureYear = currentYear - joinYear + 1; // Convert calendar year to "Year N"
+      const cliffYear = cliffDate.getFullYear();
+      // Year 2 corresponds to cliff date, Year N = cliffYear + (N - 2)
+      let firstFutureYear = Math.max(2, currentYear - cliffYear + 2);
 
       // Add future refreshers (from current year through 4 years from now)
       if (futureRefresherShares > 0) {
         let futureYear = firstFutureYear;
-        let anniversaryDate = new Date(joinDate);
-        anniversaryDate.setFullYear(joinYear + (futureYear - 1)); // Year N = joinYear + (N-1)
+        let grantDate = new Date(cliffDate);
+        grantDate.setFullYear(cliffYear + (futureYear - 2));
 
-        while (anniversaryDate <= endDate) {
+        while (grantDate <= endDate) {
           refreshers.push({
-            grantDate: new Date(anniversaryDate),
+            grantDate: new Date(grantDate),
             shares: futureRefresherShares,
             year: futureYear,
             isFuture: true
           });
           futureYear++;
-          anniversaryDate.setFullYear(anniversaryDate.getFullYear() + 1);
+          grantDate.setFullYear(grantDate.getFullYear() + 1);
         }
       }
 
@@ -536,8 +598,8 @@
           }
         });
 
-        const totalShares = initialShares + refresherShares;
-        const rsuValue = totalShares * stockPrice;
+        const totalSharesVested = initialShares + refresherShares;
+        const rsuValue = totalSharesVested * stockPrice;
         const totalComp = yearBaseSalary + yearBonus + rsuValue;
 
         yearlyData.push({
@@ -547,15 +609,29 @@
           initialShares,
           refresherShares,
           refresherReceived,
-          totalShares,
+          totalSharesVested,
           rsuValue,
           totalComp,
           isPartial: yearFraction < 1
         });
       }
 
-      // Calculate year-over-year changes
+      // Calculate cumulative totals and unvested RSU
+      let cumulativeInitialVested = 0;
+      let cumulativeRefresherVested = 0;
+      let cumulativeRefresherGranted = 0;
+
       for (let i = 0; i < yearlyData.length; i++) {
+        cumulativeInitialVested += yearlyData[i].initialShares;
+        cumulativeRefresherVested += yearlyData[i].refresherShares;
+        cumulativeRefresherGranted += yearlyData[i].refresherReceived;
+
+        // Unvested = (initial grant - cumulative initial vested) + (cumulative refresher granted - cumulative refresher vested)
+        const unvestedInitial = Math.max(0, initialGrant - cumulativeInitialVested);
+        const unvestedRefresher = Math.max(0, cumulativeRefresherGranted - cumulativeRefresherVested);
+        yearlyData[i].unvestedShares = unvestedInitial + unvestedRefresher;
+
+        // Year-over-year changes
         if (i === 0) {
           yearlyData[i].changeAbsolute = null;
           yearlyData[i].changePercent = null;
@@ -567,7 +643,101 @@
         }
       }
 
-      // Generate results table
+      // Collect all grant and vest events for the detailed table
+      const events = [];
+
+      // Add initial grant vest events
+      const initialVestEvents = calculateInitialGrantVesting(joinDate, initialGrant, joinDate, endDate);
+      initialVestEvents.forEach(v => {
+        events.push({
+          date: v.date,
+          granted: 0,
+          vested: v.shares,
+          type: 'initial',
+          note: v.note
+        });
+      });
+
+      // Add refresher grant and vest events
+      refreshers.forEach(r => {
+        // Grant event
+        events.push({
+          date: r.grantDate,
+          granted: r.shares,
+          vested: 0,
+          type: 'refresher-grant',
+          note: `Year ${r.year} refresher${r.isFuture ? ' (projected)' : ''}`
+        });
+
+        // Vest events for this refresher
+        const vestEvents = calculateRefresherVesting(r.grantDate, r.shares, joinDate, endDate);
+        vestEvents.forEach(v => {
+          events.push({
+            date: v.date,
+            granted: 0,
+            vested: v.shares,
+            type: 'refresher-vest',
+            note: `Year ${r.year} refresher vest`
+          });
+        });
+      });
+
+      // Sort events by date
+      events.sort((a, b) => a.date - b.date);
+
+      // Merge events on the same date
+      const mergedEvents = [];
+      events.forEach(e => {
+        const dateStr = e.date.toISOString().split('T')[0];
+        const existing = mergedEvents.find(m => m.date.toISOString().split('T')[0] === dateStr);
+        if (existing) {
+          existing.granted += e.granted;
+          existing.vested += e.vested;
+          if (e.note && !existing.note.includes(e.note)) {
+            existing.note += ', ' + e.note;
+          }
+        } else {
+          mergedEvents.push({ ...e });
+        }
+      });
+
+      // Store data globally for toggle
+      calculatedData = {
+        yearlyData,
+        initialGrant,
+        pastCount,
+        avgPastRefresher,
+        futureRefresherShares,
+        reductionPercent,
+        events: mergedEvents
+      };
+      currentStockPrice = stockPrice;
+
+      renderResultsTable();
+      document.getElementById('results').style.display = 'block';
+      document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function toggleRsuDisplay() {
+      if (calculatedData) {
+        renderResultsTable();
+      }
+    }
+
+    function renderResultsTable() {
+      const { yearlyData, initialGrant, pastCount, avgPastRefresher, futureRefresherShares, reductionPercent } = calculatedData;
+      const showJpy = document.getElementById('showJpy').checked;
+      const stockPrice = currentStockPrice;
+
+      // Helper to format RSU values based on toggle
+      const formatRsu = (shares) => {
+        if (shares === 0) return '-';
+        if (showJpy) {
+          return formatMoney(shares * stockPrice);
+        }
+        return formatShares(shares);
+      };
+
       let html = `
         <div class="table-wrapper">
         <table>
@@ -576,10 +746,11 @@
               <th>Year</th>
               <th>Base Salary</th>
               <th>Bonus</th>
-              <th>Initial RSU (Vested)</th>
-              <th>Refresher RSU (Vested)</th>
-              <th>Refresher Granted</th>
-              <th>Total RSU Value</th>
+              <th>Refreshers Granted</th>
+              <th>Initial Vested</th>
+              <th>Refreshers Vested</th>
+              <th>Total RSU Vested</th>
+              <th>Unvested RSU</th>
               <th>Total Comp</th>
               <th>YoY Change</th>
               <th>YoY %</th>
@@ -591,15 +762,19 @@
       let grandTotal = 0;
       let totalBaseSalary = 0;
       let totalBonus = 0;
-      let totalRsuValue = 0;
-      let totalRefresherReceived = 0;
+      let totalInitialVested = 0;
+      let totalRefresherVested = 0;
+      let totalRefresherGranted = 0;
+      let totalRsuVested = 0;
 
       yearlyData.forEach(data => {
         grandTotal += data.totalComp;
         totalBaseSalary += data.baseSalary;
         totalBonus += data.bonus;
-        totalRsuValue += data.rsuValue;
-        totalRefresherReceived += data.refresherReceived;
+        totalInitialVested += data.initialShares;
+        totalRefresherVested += data.refresherShares;
+        totalRefresherGranted += data.refresherReceived;
+        totalRsuVested += data.totalSharesVested;
 
         const changeClass = data.changeAbsolute === null ? '' :
           (data.changeAbsolute >= 0 ? 'change-positive' : 'change-negative');
@@ -613,10 +788,11 @@
             <td>${data.year}${data.isPartial ? '*' : ''}</td>
             <td class="money">${formatMoney(data.baseSalary)}</td>
             <td class="money">${formatMoney(data.bonus)}</td>
-            <td class="money">${formatShares(data.initialShares)} (${formatMoney(data.initialShares * stockPrice)})</td>
-            <td class="money">${formatShares(data.refresherShares)} (${formatMoney(data.refresherShares * stockPrice)})</td>
-            <td class="money">${data.refresherReceived > 0 ? formatShares(data.refresherReceived) : '-'}</td>
-            <td class="money">${formatMoney(data.rsuValue)}</td>
+            <td class="money">${formatRsu(data.refresherReceived)}</td>
+            <td class="money">${formatRsu(data.initialShares)}</td>
+            <td class="money">${formatRsu(data.refresherShares)}</td>
+            <td class="money">${formatRsu(data.totalSharesVested)}</td>
+            <td class="money">${formatRsu(data.unvestedShares)}</td>
             <td class="money">${formatMoney(data.totalComp)}</td>
             <td class="money ${changeClass}">${changeAbsoluteStr}</td>
             <td class="money ${changeClass}">${changePercentStr}</td>
@@ -629,9 +805,11 @@
             <td>TOTAL</td>
             <td class="money">${formatMoney(totalBaseSalary)}</td>
             <td class="money">${formatMoney(totalBonus)}</td>
-            <td colspan="2"></td>
-            <td class="money">${formatShares(totalRefresherReceived)}</td>
-            <td class="money">${formatMoney(totalRsuValue)}</td>
+            <td class="money">${formatRsu(totalRefresherGranted)}</td>
+            <td class="money">${formatRsu(totalInitialVested)}</td>
+            <td class="money">${formatRsu(totalRefresherVested)}</td>
+            <td class="money">${formatRsu(totalRsuVested)}</td>
+            <td></td>
             <td class="money">${formatMoney(grandTotal)}</td>
             <td colspan="2"></td>
           </tr>
@@ -651,9 +829,54 @@
         </p>`;
       }
 
+      // Events table (grant and vest schedule)
+      const { events } = calculatedData;
+      if (events && events.length > 0) {
+        html += `
+          <h3 style="margin-top: 24px; margin-bottom: 12px;">RSU Grant & Vest Schedule</h3>
+          <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>RSU Granted</th>
+                <th>RSU Vested</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        let totalGranted = 0;
+        let totalVested = 0;
+
+        events.forEach(event => {
+          totalGranted += event.granted;
+          totalVested += event.vested;
+
+          const dateStr = event.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+          html += `
+            <tr>
+              <td>${dateStr}</td>
+              <td class="money">${event.granted > 0 ? formatRsu(event.granted) : '-'}</td>
+              <td class="money">${event.vested > 0 ? formatRsu(event.vested) : '-'}</td>
+            </tr>
+          `;
+        });
+
+        html += `
+            <tr class="total-row">
+              <td>TOTAL</td>
+              <td class="money">${formatRsu(totalGranted)}</td>
+              <td class="money">${formatRsu(totalVested)}</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        `;
+      }
+
       document.getElementById('resultsContent').innerHTML = html;
-      document.getElementById('results').style.display = 'block';
-      document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
     }
 
     function formatMoney(amount) {
