@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Total Compensation Calculator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .card h2 {
+      margin-top: 0;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 2px;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="date"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #2557a7;
+    }
+
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .row .form-group {
+      flex: 1;
+    }
+
+    .refreshers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 12px;
+    }
+
+    .refresher-input {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .refresher-input label {
+      font-size: 14px;
+    }
+
+    button {
+      background: #2557a7;
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+    }
+
+    button:hover {
+      background: #1a4380;
+    }
+
+    #results {
+      display: none;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 900px;
+    }
+
+    th, td {
+      padding: 10px 8px;
+      text-align: right;
+      border-bottom: 1px solid #eee;
+      white-space: nowrap;
+      font-size: 14px;
+    }
+
+    th:first-child, td:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: white;
+      z-index: 1;
+    }
+
+    th:first-child {
+      background: #f9f9f9;
+    }
+
+    th {
+      background: #f9f9f9;
+      font-weight: 600;
+    }
+
+    tr:hover td {
+      background: #f5f5f5;
+    }
+
+    tr:hover td:first-child {
+      background: #f5f5f5;
+    }
+
+    .change-positive {
+      color: #2e7d32;
+    }
+
+    .change-negative {
+      color: #c62828;
+    }
+
+    .total-row {
+      font-weight: bold;
+      background: #e8f4e8 !important;
+    }
+
+    .total-row td:first-child {
+      background: #e8f4e8 !important;
+    }
+
+    .money {
+      font-family: 'SF Mono', Monaco, monospace;
+    }
+
+    .stock-price-note {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .reduction-section {
+      background: #ffe8e8;
+      border-radius: 4px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .reduction-section h3 {
+      margin-top: 0;
+      color: #c00;
+    }
+  </style>
+</head>
+<body>
+  <h1>Total Compensation Calculator</h1>
+
+  <div class="card">
+    <h2>Basic Information</h2>
+    <div class="row">
+      <div class="form-group">
+        <label for="joinDate">Join Date</label>
+        <input type="date" id="joinDate" required>
+      </div>
+      <div class="form-group">
+        <label for="baseSalary">Base Salary (¥)</label>
+        <input type="number" id="baseSalary" placeholder="10000000" required>
+      </div>
+    </div>
+    <div class="row">
+      <div class="form-group">
+        <label for="bonusPercent">Bonus (%)</label>
+        <input type="number" id="bonusPercent" value="10" step="0.1">
+      </div>
+      <div class="form-group">
+        <label for="stockPrice">Stock Price (¥)</label>
+        <input type="number" id="stockPrice" placeholder="2000" step="1" required>
+        <div class="hint">Used to calculate RSU value</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Initial RSU Grant</h2>
+    <div class="form-group">
+      <label for="initialGrant">Number of Shares</label>
+      <input type="number" id="initialGrant" placeholder="10000" required>
+      <div class="hint">4-year vest with 1-year cliff. Vests quarterly on Feb 1, May 1, Aug 1, Nov 1.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Refresher RSUs</h2>
+    <p class="hint">Enter the number of shares granted on each work anniversary. Leave empty or 0 if none.</p>
+    <div class="refreshers-grid" id="refreshersGrid">
+      <p class="hint" style="grid-column: 1 / -1; background: #fff3cd; padding: 12px; border-radius: 4px;">Enter your join date above to see refresher inputs for each anniversary year.</p>
+    </div>
+
+    <div class="reduction-section">
+      <h3>Future Refresher Scenario</h3>
+      <div class="form-group">
+        <label for="reductionPercent">Future refresher as % of average past refreshers</label>
+        <input type="number" id="reductionPercent" value="100" min="0" max="200">
+        <div class="hint">100% = same as average past refreshers. 40% = 60% reduction from average.</div>
+      </div>
+      <div id="futureRefresherPreview" class="hint" style="margin-top: 8px;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <button onclick="calculate()">Calculate Total Compensation</button>
+  </div>
+
+  <div class="card" id="results">
+    <h2>Compensation Breakdown</h2>
+    <div class="stock-price-note">
+      Note: RSU values are calculated using the stock price you provided. Actual value will vary based on stock price at vest date.
+    </div>
+    <div id="resultsContent"></div>
+  </div>
+
+  <script>
+    const VEST_MONTHS = [1, 4, 7, 10]; // Feb=1, May=4, Aug=7, Nov=10 (0-indexed)
+
+    // Generate refresher inputs on page load
+    document.addEventListener('DOMContentLoaded', function() {
+      updateRefresherInputs();
+      document.getElementById('joinDate').addEventListener('change', updateRefresherInputs);
+      document.getElementById('reductionPercent').addEventListener('input', updateFuturePreview);
+    });
+
+    function updateRefresherInputs() {
+      const joinDateStr = document.getElementById('joinDate').value;
+      const grid = document.getElementById('refreshersGrid');
+
+      if (!joinDateStr) {
+        grid.innerHTML = '<p class="hint" style="grid-column: 1 / -1; background: #fff3cd; padding: 12px; border-radius: 4px;">Enter your join date above to see refresher inputs for each anniversary year.</p>';
+        return;
+      }
+
+      const joinDate = new Date(joinDateStr);
+      const today = new Date();
+      const currentYear = today.getFullYear();
+      const joinYear = joinDate.getFullYear();
+
+      let html = '';
+      // Year 2 = second calendar year at company = first anniversary
+      // e.g., join 2023 -> Year 2 is 2024 (first anniversary)
+      let year = 2;
+      let anniversaryYear = joinYear + 1; // First anniversary year
+
+      // Only show inputs for past years (before current year)
+      while (anniversaryYear < currentYear) {
+        html += `
+          <div class="refresher-input">
+            <label for="refresher${year}">Year ${year} (${anniversaryYear})</label>
+            <input type="number" id="refresher${year}" data-year="${year}"
+                   data-anniversary-year="${anniversaryYear}" placeholder="0" onchange="updateFuturePreview()">
+          </div>
+        `;
+        year++;
+        anniversaryYear++;
+      }
+
+      grid.innerHTML = html || '<p class="hint" style="grid-column: 1 / -1;">No past refreshers yet (refreshers start from Year 2).</p>';
+      updateFuturePreview();
+    }
+
+    function updateFuturePreview() {
+      const preview = document.getElementById('futureRefresherPreview');
+      const reductionPercent = parseFloat(document.getElementById('reductionPercent').value) || 100;
+      const refresherInputs = document.querySelectorAll('#refreshersGrid input');
+
+      let total = 0;
+      let count = 0;
+      refresherInputs.forEach(input => {
+        const val = parseInt(input.value) || 0;
+        if (val > 0) {
+          total += val;
+          count++;
+        }
+      });
+
+      if (count > 0) {
+        const avg = total / count;
+        const futureShares = Math.round(avg * reductionPercent / 100);
+        preview.innerHTML = `<strong>Average past refresher:</strong> ${Math.round(avg).toLocaleString()} shares → <strong>Future refreshers:</strong> ${futureShares.toLocaleString()} shares/year`;
+      } else {
+        preview.innerHTML = 'Enter past refresher amounts to see future projections.';
+      }
+    }
+
+    function getFirstVestDate(joinDate) {
+      // Find the first vest date (Feb 1, May 1, Aug 1, Nov 1) STRICTLY AFTER join date
+      // If you start on a vest day, your vesting schedule starts from the NEXT vest day
+      const vestDates = VEST_MONTHS.map(month => {
+        const d = new Date(joinDate.getFullYear(), month, 1);
+        if (d <= joinDate) {  // Changed from < to <= (strictly after)
+          d.setFullYear(d.getFullYear() + 1);
+        }
+        return d;
+      });
+      vestDates.sort((a, b) => a - b);
+      return vestDates[0];
+    }
+
+    function getVestDatesInRange(startDate, endDate) {
+      const dates = [];
+      let current = new Date(startDate.getFullYear(), VEST_MONTHS[0], 1);
+
+      // Start from beginning of the year of startDate
+      while (current <= endDate) {
+        for (const month of VEST_MONTHS) {
+          const vestDate = new Date(current.getFullYear(), month, 1);
+          if (vestDate >= startDate && vestDate <= endDate) {
+            dates.push(new Date(vestDate));
+          }
+        }
+        current.setFullYear(current.getFullYear() + 1);
+      }
+
+      return dates.sort((a, b) => a - b);
+    }
+
+    function calculateInitialGrantVesting(joinDate, totalShares, startDate, endDate) {
+      const vesting = [];
+      const firstVestScheduleDate = getFirstVestDate(joinDate);
+      const cliffDate = new Date(firstVestScheduleDate);
+      cliffDate.setFullYear(cliffDate.getFullYear() + 1);
+
+      // Calculate vesting end date (4 years from first vest schedule)
+      const vestingEndDate = new Date(firstVestScheduleDate);
+      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 4);
+
+      // Get all vest dates from cliff to end
+      const vestDates = getVestDatesInRange(cliffDate, vestingEndDate);
+
+      // At cliff: 25% vests (4 quarters worth)
+      // Remaining 75% vests over next 12 quarters
+      const cliffShares = totalShares * 0.25;
+      const quarterlyShares = (totalShares * 0.75) / 12;
+
+      vestDates.forEach((vestDate, index) => {
+        if (vestDate >= startDate && vestDate <= endDate) {
+          const shares = index === 0 ? cliffShares : quarterlyShares;
+          vesting.push({
+            date: vestDate,
+            shares: shares,
+            type: 'initial',
+            note: index === 0 ? 'Cliff vest' : 'Quarterly vest'
+          });
+        }
+      });
+
+      return vesting;
+    }
+
+    function calculateRefresherVesting(grantDate, totalShares, startDate, endDate) {
+      const vesting = [];
+
+      // Refreshers vest quarterly over 4 years from grant date
+      // First vest is on the next vest date after grant
+      const firstVestDate = getFirstVestDate(grantDate);
+      const vestingEndDate = new Date(grantDate);
+      vestingEndDate.setFullYear(vestingEndDate.getFullYear() + 4);
+
+      const vestDates = getVestDatesInRange(firstVestDate, vestingEndDate);
+      const sharesPerQuarter = totalShares / 16; // 4 years * 4 quarters
+
+      vestDates.forEach(vestDate => {
+        if (vestDate >= startDate && vestDate <= endDate) {
+          vesting.push({
+            date: vestDate,
+            shares: sharesPerQuarter,
+            type: 'refresher',
+            grantYear: grantDate.getFullYear()
+          });
+        }
+      });
+
+      return vesting;
+    }
+
+    function calculate() {
+      const joinDateStr = document.getElementById('joinDate').value;
+      const baseSalary = parseFloat(document.getElementById('baseSalary').value);
+      const bonusPercent = parseFloat(document.getElementById('bonusPercent').value) || 0;
+      const stockPrice = parseFloat(document.getElementById('stockPrice').value);
+      const initialGrant = parseInt(document.getElementById('initialGrant').value) || 0;
+      const reductionPercent = parseFloat(document.getElementById('reductionPercent').value) || 0;
+
+      if (!joinDateStr || !baseSalary || !stockPrice) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      const joinDate = new Date(joinDateStr);
+      const today = new Date();
+      const startYear = joinDate.getFullYear();
+      const endDate = new Date(today);
+      endDate.setFullYear(endDate.getFullYear() + 4);
+      const endYear = endDate.getFullYear();
+
+      // Collect past refresher grants
+      const refresherInputs = document.querySelectorAll('#refreshersGrid input');
+      const refreshers = [];
+      let pastTotal = 0;
+      let pastCount = 0;
+
+      refresherInputs.forEach(input => {
+        const year = parseInt(input.dataset.year); // Year 2, 3, 4, etc.
+        const shares = parseInt(input.value) || 0;
+
+        if (shares > 0) {
+          pastTotal += shares;
+          pastCount++;
+          // Year N means (N-1) years after join date (Year 2 = 1st anniversary)
+          const grantDate = new Date(joinDate);
+          grantDate.setFullYear(grantDate.getFullYear() + (year - 1));
+          refreshers.push({ grantDate, shares, year, isFuture: false });
+        }
+      });
+
+      // Calculate future refreshers based on average of past refreshers
+      const avgPastRefresher = pastCount > 0 ? pastTotal / pastCount : 0;
+      const futureRefresherShares = Math.round(avgPastRefresher * reductionPercent / 100);
+
+      // Determine the first future refresher year (current year or later)
+      // Year 2 = joinYear + 1, Year N = joinYear + (N-1)
+      const currentYear = today.getFullYear();
+      const joinYear = joinDate.getFullYear();
+      let firstFutureYear = currentYear - joinYear + 1; // Convert calendar year to "Year N"
+
+      // Add future refreshers (from current year through 4 years from now)
+      if (futureRefresherShares > 0) {
+        let futureYear = firstFutureYear;
+        let anniversaryDate = new Date(joinDate);
+        anniversaryDate.setFullYear(joinYear + (futureYear - 1)); // Year N = joinYear + (N-1)
+
+        while (anniversaryDate <= endDate) {
+          refreshers.push({
+            grantDate: new Date(anniversaryDate),
+            shares: futureRefresherShares,
+            year: futureYear,
+            isFuture: true
+          });
+          futureYear++;
+          anniversaryDate.setFullYear(anniversaryDate.getFullYear() + 1);
+        }
+      }
+
+      // Calculate yearly breakdown
+      const yearlyData = [];
+
+      for (let year = startYear; year <= endYear; year++) {
+        const yearStart = new Date(year, 0, 1);
+        const yearEnd = new Date(year, 11, 31);
+
+        // Determine what portion of the year to count
+        const effectiveStart = year === startYear ? joinDate : yearStart;
+        const effectiveEnd = year === endYear ? endDate : yearEnd;
+
+        // Calculate days worked this year
+        const daysInYear = (yearEnd - yearStart) / (1000 * 60 * 60 * 24) + 1;
+        const daysWorked = Math.max(0, (effectiveEnd - effectiveStart) / (1000 * 60 * 60 * 24) + 1);
+        const yearFraction = Math.min(1, daysWorked / daysInYear);
+
+        // Base salary (prorated for partial years)
+        const yearBaseSalary = baseSalary * yearFraction;
+
+        // Bonus (prorated)
+        const yearBonus = yearBaseSalary * (bonusPercent / 100);
+
+        // Initial grant vesting
+        const initialVesting = calculateInitialGrantVesting(joinDate, initialGrant, effectiveStart, effectiveEnd);
+        const initialShares = initialVesting.reduce((sum, v) => sum + v.shares, 0);
+
+        // Refresher vesting
+        let refresherShares = 0;
+        refreshers.forEach(r => {
+          const vesting = calculateRefresherVesting(r.grantDate, r.shares, effectiveStart, effectiveEnd);
+          refresherShares += vesting.reduce((sum, v) => sum + v.shares, 0);
+        });
+
+        // Refresher grants received this year (not vested, but granted)
+        let refresherReceived = 0;
+        refreshers.forEach(r => {
+          if (r.grantDate.getFullYear() === year) {
+            refresherReceived += r.shares;
+          }
+        });
+
+        const totalShares = initialShares + refresherShares;
+        const rsuValue = totalShares * stockPrice;
+        const totalComp = yearBaseSalary + yearBonus + rsuValue;
+
+        yearlyData.push({
+          year,
+          baseSalary: yearBaseSalary,
+          bonus: yearBonus,
+          initialShares,
+          refresherShares,
+          refresherReceived,
+          totalShares,
+          rsuValue,
+          totalComp,
+          isPartial: yearFraction < 1
+        });
+      }
+
+      // Calculate year-over-year changes
+      for (let i = 0; i < yearlyData.length; i++) {
+        if (i === 0) {
+          yearlyData[i].changeAbsolute = null;
+          yearlyData[i].changePercent = null;
+        } else {
+          const prevComp = yearlyData[i - 1].totalComp;
+          const currComp = yearlyData[i].totalComp;
+          yearlyData[i].changeAbsolute = currComp - prevComp;
+          yearlyData[i].changePercent = prevComp > 0 ? ((currComp - prevComp) / prevComp) * 100 : null;
+        }
+      }
+
+      // Generate results table
+      let html = `
+        <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Base Salary</th>
+              <th>Bonus</th>
+              <th>Initial RSU (Vested)</th>
+              <th>Refresher RSU (Vested)</th>
+              <th>Refresher Granted</th>
+              <th>Total RSU Value</th>
+              <th>Total Comp</th>
+              <th>YoY Change</th>
+              <th>YoY %</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      let grandTotal = 0;
+      let totalBaseSalary = 0;
+      let totalBonus = 0;
+      let totalRsuValue = 0;
+      let totalRefresherReceived = 0;
+
+      yearlyData.forEach(data => {
+        grandTotal += data.totalComp;
+        totalBaseSalary += data.baseSalary;
+        totalBonus += data.bonus;
+        totalRsuValue += data.rsuValue;
+        totalRefresherReceived += data.refresherReceived;
+
+        const changeClass = data.changeAbsolute === null ? '' :
+          (data.changeAbsolute >= 0 ? 'change-positive' : 'change-negative');
+        const changeAbsoluteStr = data.changeAbsolute === null ? '-' :
+          (data.changeAbsolute >= 0 ? '+' : '') + formatMoney(data.changeAbsolute);
+        const changePercentStr = data.changePercent === null ? '-' :
+          (data.changePercent >= 0 ? '+' : '') + data.changePercent.toFixed(1) + '%';
+
+        html += `
+          <tr>
+            <td>${data.year}${data.isPartial ? '*' : ''}</td>
+            <td class="money">${formatMoney(data.baseSalary)}</td>
+            <td class="money">${formatMoney(data.bonus)}</td>
+            <td class="money">${formatShares(data.initialShares)} (${formatMoney(data.initialShares * stockPrice)})</td>
+            <td class="money">${formatShares(data.refresherShares)} (${formatMoney(data.refresherShares * stockPrice)})</td>
+            <td class="money">${data.refresherReceived > 0 ? formatShares(data.refresherReceived) : '-'}</td>
+            <td class="money">${formatMoney(data.rsuValue)}</td>
+            <td class="money">${formatMoney(data.totalComp)}</td>
+            <td class="money ${changeClass}">${changeAbsoluteStr}</td>
+            <td class="money ${changeClass}">${changePercentStr}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+          <tr class="total-row">
+            <td>TOTAL</td>
+            <td class="money">${formatMoney(totalBaseSalary)}</td>
+            <td class="money">${formatMoney(totalBonus)}</td>
+            <td colspan="2"></td>
+            <td class="money">${formatShares(totalRefresherReceived)}</td>
+            <td class="money">${formatMoney(totalRsuValue)}</td>
+            <td class="money">${formatMoney(grandTotal)}</td>
+            <td colspan="2"></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="hint">* Partial year (prorated based on join date or calculation end date)</p>
+      `;
+
+      if (pastCount > 0) {
+        const avgDisplay = Math.round(avgPastRefresher).toLocaleString();
+        const futureDisplay = futureRefresherShares.toLocaleString();
+        html += `<p style="margin-top: 16px; padding: 12px; background: #e8f4fc; border-radius: 4px;">
+          <strong>Refresher calculation:</strong><br>
+          Average past refresher: ${avgDisplay} shares<br>
+          Future refresher (${reductionPercent}% of average): ${futureDisplay} shares/year
+        </p>`;
+      }
+
+      document.getElementById('resultsContent').innerHTML = html;
+      document.getElementById('results').style.display = 'block';
+      document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function formatMoney(amount) {
+      return '¥' + Math.round(amount).toLocaleString();
+    }
+
+    function formatShares(shares) {
+      return Math.round(shares).toLocaleString() + ' sh';
+    }
+  </script>
+</body>
+</html>
