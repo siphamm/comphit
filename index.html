@@ -238,18 +238,16 @@
       </div>
       <div class="form-group">
         <label for="stockPrice">Stock Price (¥)</label>
-        <input type="number" id="stockPrice" placeholder="7500" value="7500" step="1" required>
-        <div class="hint">Used to calculate RSU value</div>
+        <input type="number" id="stockPrice" placeholder="" step="1" required>
+        <div class="hint">Used to calculate future RSU value</div>
       </div>
     </div>
-  </div>
-
-  <div class="card">
-    <h2>Initial RSU Grant</h2>
-    <div class="form-group">
-      <label for="initialGrant">Number of Shares</label>
-      <input type="number" id="initialGrant" placeholder="10000" required>
-      <div class="hint">4-year vest with 1-year cliff. Vests quarterly on Feb 1, May 1, Aug 1, Nov 1.</div>
+    <div class="row">
+      <div class="form-group">
+        <label for="initialGrant">Initial RSU Grant (shares)</label>
+        <input type="number" id="initialGrant" placeholder="10000" required>
+        <div class="hint">4-year vest with 1-year cliff. Vests quarterly on Feb 1, May 1, Aug 1, Nov 1.</div>
+      </div>
     </div>
   </div>
 
@@ -334,8 +332,21 @@
     let calculatedData = null;
     let currentStockPrice = 0;
 
+    // Get the latest stock price from historical data
+    function getLatestStockPrice() {
+      const dates = Object.keys(HISTORICAL_STOCK_PRICES).sort();
+      const latestDate = dates[dates.length - 1];
+      return HISTORICAL_STOCK_PRICES[latestDate];
+    }
+
     // Generate refresher inputs on page load
     document.addEventListener('DOMContentLoaded', function() {
+      // Set default stock price to latest historical price
+      const latestPrice = getLatestStockPrice();
+      const stockPriceInput = document.getElementById('stockPrice');
+      stockPriceInput.value = latestPrice;
+      stockPriceInput.placeholder = latestPrice;
+
       updateRefresherInputs();
       document.getElementById('joinDate').addEventListener('change', updateRefresherInputs);
       document.getElementById('reductionPercent').addEventListener('input', updateFuturePreview);
