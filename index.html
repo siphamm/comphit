@@ -292,6 +292,44 @@
   <script>
     const VEST_MONTHS = [1, 4, 7, 10]; // Feb=1, May=4, Aug=7, Nov=10 (0-indexed)
 
+    // Historical stock prices for Recruit Holdings (6098.T) on vest dates
+    // Source: Yahoo Finance
+    const HISTORICAL_STOCK_PRICES = {
+      // 2021
+      '2021-02-01': 5281,
+      '2021-05-01': 5555,
+      '2021-08-01': 6500,
+      '2021-11-01': 6901,
+      // 2022
+      '2022-02-01': 4819,
+      '2022-05-01': 4734,
+      '2022-08-01': 4483,
+      '2022-11-01': 4329,
+      // 2023
+      '2023-02-01': 3704,
+      '2023-05-01': 4290,
+      '2023-08-01': 5220,
+      '2023-11-01': 5505,
+      // 2024
+      '2024-02-01': 6044,
+      '2024-05-01': 7948,
+      '2024-08-01': 9047,
+      '2024-11-01': 10385,
+      // 2025
+      '2025-02-01': 8800,
+      '2025-05-01': 8689,
+      '2025-08-01': 8579,
+      '2025-11-01': 8006,
+      // 2026
+      '2026-02-01': 8344,
+    };
+
+    // Helper to get stock price for a date (returns historical if available, otherwise user input)
+    function getStockPriceForDate(date, fallbackPrice) {
+      const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      return HISTORICAL_STOCK_PRICES[dateStr] || fallbackPrice;
+    }
+
     // Global state for toggling display
     let calculatedData = null;
     let currentStockPrice = 0;
@@ -579,15 +617,24 @@
         // Bonus (prorated)
         const yearBonus = yearBaseSalary * (bonusPercent / 100);
 
-        // Initial grant vesting
+        // Initial grant vesting (with historical prices)
         const initialVesting = calculateInitialGrantVesting(joinDate, initialGrant, effectiveStart, effectiveEnd);
         const initialShares = initialVesting.reduce((sum, v) => sum + v.shares, 0);
+        const initialValue = initialVesting.reduce((sum, v) => {
+          const price = getStockPriceForDate(v.date, stockPrice);
+          return sum + (v.shares * price);
+        }, 0);
 
-        // Refresher vesting
+        // Refresher vesting (with historical prices)
         let refresherShares = 0;
+        let refresherValue = 0;
         refreshers.forEach(r => {
           const vesting = calculateRefresherVesting(r.grantDate, r.shares, effectiveStart, effectiveEnd);
           refresherShares += vesting.reduce((sum, v) => sum + v.shares, 0);
+          refresherValue += vesting.reduce((sum, v) => {
+            const price = getStockPriceForDate(v.date, stockPrice);
+            return sum + (v.shares * price);
+          }, 0);
         });
 
         // Refresher grants received this year (not vested, but granted)
@@ -599,7 +646,7 @@
         });
 
         const totalSharesVested = initialShares + refresherShares;
-        const rsuValue = totalSharesVested * stockPrice;
+        const rsuValue = initialValue + refresherValue;
         const totalComp = yearBaseSalary + yearBonus + rsuValue;
 
         yearlyData.push({
@@ -607,7 +654,9 @@
           baseSalary: yearBaseSalary,
           bonus: yearBonus,
           initialShares,
+          initialValue,
           refresherShares,
+          refresherValue,
           refresherReceived,
           totalSharesVested,
           rsuValue,
@@ -762,19 +811,34 @@
       let grandTotal = 0;
       let totalBaseSalary = 0;
       let totalBonus = 0;
-      let totalInitialVested = 0;
-      let totalRefresherVested = 0;
+      let totalInitialShares = 0;
+      let totalInitialValue = 0;
+      let totalRefresherShares = 0;
+      let totalRefresherValue = 0;
       let totalRefresherGranted = 0;
-      let totalRsuVested = 0;
+      let totalRsuShares = 0;
+      let totalRsuValue = 0;
+
+      // Helper to format RSU with historical value support
+      const formatRsuWithValue = (shares, value) => {
+        if (shares === 0) return '-';
+        if (showJpy) {
+          return formatMoney(value);
+        }
+        return formatShares(shares);
+      };
 
       yearlyData.forEach(data => {
         grandTotal += data.totalComp;
         totalBaseSalary += data.baseSalary;
         totalBonus += data.bonus;
-        totalInitialVested += data.initialShares;
-        totalRefresherVested += data.refresherShares;
+        totalInitialShares += data.initialShares;
+        totalInitialValue += data.initialValue;
+        totalRefresherShares += data.refresherShares;
+        totalRefresherValue += data.refresherValue;
         totalRefresherGranted += data.refresherReceived;
-        totalRsuVested += data.totalSharesVested;
+        totalRsuShares += data.totalSharesVested;
+        totalRsuValue += data.rsuValue;
 
         const changeClass = data.changeAbsolute === null ? '' :
           (data.changeAbsolute >= 0 ? 'change-positive' : 'change-negative');
@@ -783,16 +847,19 @@
         const changePercentStr = data.changePercent === null ? '-' :
           (data.changePercent >= 0 ? '+' : '') + data.changePercent.toFixed(1) + '%';
 
+        // For unvested, use current stock price since they haven't vested yet
+        const unvestedValue = data.unvestedShares * stockPrice;
+
         html += `
           <tr>
             <td>${data.year}${data.isPartial ? '*' : ''}</td>
             <td class="money">${formatMoney(data.baseSalary)}</td>
             <td class="money">${formatMoney(data.bonus)}</td>
             <td class="money">${formatRsu(data.refresherReceived)}</td>
-            <td class="money">${formatRsu(data.initialShares)}</td>
-            <td class="money">${formatRsu(data.refresherShares)}</td>
-            <td class="money">${formatRsu(data.totalSharesVested)}</td>
-            <td class="money">${formatRsu(data.unvestedShares)}</td>
+            <td class="money">${formatRsuWithValue(data.initialShares, data.initialValue)}</td>
+            <td class="money">${formatRsuWithValue(data.refresherShares, data.refresherValue)}</td>
+            <td class="money">${formatRsuWithValue(data.totalSharesVested, data.rsuValue)}</td>
+            <td class="money">${formatRsuWithValue(data.unvestedShares, unvestedValue)}</td>
             <td class="money">${formatMoney(data.totalComp)}</td>
             <td class="money ${changeClass}">${changeAbsoluteStr}</td>
             <td class="money ${changeClass}">${changePercentStr}</td>
@@ -800,15 +867,19 @@
         `;
       });
 
+      // For total unvested, use current stock price
+      const lastYearData = yearlyData[yearlyData.length - 1];
+      const totalUnvestedValue = lastYearData ? lastYearData.unvestedShares * stockPrice : 0;
+
       html += `
           <tr class="total-row">
             <td>TOTAL</td>
             <td class="money">${formatMoney(totalBaseSalary)}</td>
             <td class="money">${formatMoney(totalBonus)}</td>
             <td class="money">${formatRsu(totalRefresherGranted)}</td>
-            <td class="money">${formatRsu(totalInitialVested)}</td>
-            <td class="money">${formatRsu(totalRefresherVested)}</td>
-            <td class="money">${formatRsu(totalRsuVested)}</td>
+            <td class="money">${formatRsuWithValue(totalInitialShares, totalInitialValue)}</td>
+            <td class="money">${formatRsuWithValue(totalRefresherShares, totalRefresherValue)}</td>
+            <td class="money">${formatRsuWithValue(totalRsuShares, totalRsuValue)}</td>
             <td></td>
             <td class="money">${formatMoney(grandTotal)}</td>
             <td colspan="2"></td>
@@ -816,7 +887,7 @@
         </tbody>
       </table>
       </div>
-      <p class="hint">* Partial year (prorated based on join date or calculation end date)</p>
+      <p class="hint">* Partial year (prorated based on join date or calculation end date). RSU values use historical stock prices for past vest dates.</p>
       `;
 
       if (pastCount > 0) {
@@ -839,8 +910,10 @@
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Stock Price</th>
                 <th>RSU Granted</th>
                 <th>RSU Vested</th>
+                <th>Vested Value</th>
               </tr>
             </thead>
             <tbody>
@@ -848,18 +921,26 @@
 
         let totalGranted = 0;
         let totalVested = 0;
+        let totalVestedValue = 0;
 
         events.forEach(event => {
           totalGranted += event.granted;
           totalVested += event.vested;
 
           const dateStr = event.date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+          const historicalPrice = getStockPriceForDate(event.date, stockPrice);
+          const vestedValue = event.vested * historicalPrice;
+          totalVestedValue += vestedValue;
+
+          const priceNote = HISTORICAL_STOCK_PRICES[`${event.date.getFullYear()}-${String(event.date.getMonth() + 1).padStart(2, '0')}-01`] ? '' : '*';
 
           html += `
             <tr>
               <td>${dateStr}</td>
-              <td class="money">${event.granted > 0 ? formatRsu(event.granted) : '-'}</td>
-              <td class="money">${event.vested > 0 ? formatRsu(event.vested) : '-'}</td>
+              <td class="money">${formatMoney(historicalPrice)}${priceNote}</td>
+              <td class="money">${event.granted > 0 ? formatShares(event.granted) : '-'}</td>
+              <td class="money">${event.vested > 0 ? formatShares(event.vested) : '-'}</td>
+              <td class="money">${event.vested > 0 ? formatMoney(vestedValue) : '-'}</td>
             </tr>
           `;
         });
@@ -867,12 +948,15 @@
         html += `
             <tr class="total-row">
               <td>TOTAL</td>
-              <td class="money">${formatRsu(totalGranted)}</td>
-              <td class="money">${formatRsu(totalVested)}</td>
+              <td></td>
+              <td class="money">${formatShares(totalGranted)}</td>
+              <td class="money">${formatShares(totalVested)}</td>
+              <td class="money">${formatMoney(totalVestedValue)}</td>
             </tr>
           </tbody>
         </table>
         </div>
+        <p class="hint">* Stock price from user input (no historical data available for this date)</p>
         `;
       }
 
